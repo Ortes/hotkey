@@ -10,6 +10,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Length', str(os.stat("build/hotkey.bin").st_size))
         self.end_headers()
         self.wfile.write(open("build/hotkey.bin", "rb").read())
+        print("Firmware sent")
 
 
 httpd = HTTPServer(('0.0.0.0', 34271), Handler)

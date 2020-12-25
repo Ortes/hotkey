@@ -2,10 +2,14 @@
 #include <string.h>
 #include <esp_https_ota.h>
 #include <mdns.h>
+#include <esp_http_server.h>
 #include "esp_wifi.h"
 #include "nvs_flash.h"
+#include "driver/gpio.h"
 
 static const char *TAG = "hotkey";
+
+#define GPIO_WIZZ GPIO_NUM_25
 
 extern const uint8_t cert_pem_start[] asm("_binary_firmware_crt_start");
 extern const uint8_t cert_pem_end[]   asm("_binary_firmware_crt_end");
@@ -45,13 +49,15 @@ void wifi_init_softap(void) {
                     .channel = 1,
                     .password = "12345678",
                     .max_connection = 5,
-                    .authmode = WIFI_AUTH_WPA2_PSK
+                    .authmode = WIFI_AUTH_WPA2_PSK,
+                    .beacon_interval = 500
             },
     };
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
     ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_AP, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
+    ESP_ERROR_CHECK(esp_wifi_set_max_tx_power(34));
 }
 
 void init_nvs() {
@@ -98,11 +104,67 @@ void ota_task(void *args) {
     }
 }
 
+static esp_err_t update_get_handler(httpd_req_t *req)
+{
+    httpd_resp_send(req, "OK", strlen("OK"));
+    xTaskCreate(ota_task, "ota_task", 4096, NULL, 12, NULL);
+    ESP_LOGI(TAG, "Update");
+    return ESP_OK;
+}
+
+static const httpd_uri_t update = {
+        .uri       = "/update",
+        .method    = HTTP_GET,
+        .handler   = update_get_handler
+};
+
+
+static bool level = false;
+static esp_err_t toggle_get_handler(httpd_req_t *req)
+{
+    httpd_resp_send(req, "OK", strlen("OK"));
+    level = !level;
+    gpio_set_level(GPIO_WIZZ, level);
+    ESP_LOGI(TAG, "Toggle");
+    return ESP_OK;
+}
+
+static const httpd_uri_t toggle = {
+        .uri       = "/toggle",
+        .method    = HTTP_GET,
+        .handler   = toggle_get_handler
+};
+
+
+static httpd_handle_t start_webserver(void)
+{
+    httpd_handle_t server = NULL;
+    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+
+    ESP_LOGI(TAG, "Starting server on port: '%d'", config.server_port);
+    if (httpd_start(&server, &config) == ESP_OK) {
+        httpd_register_uri_handler(server, &toggle);
+        httpd_register_uri_handler(server, &update);
+        return server;
+    }
+
+    ESP_LOGI(TAG, "Error starting server!");
+    return NULL;
+}
+
+void setup_gpio() {
+    gpio_set_direction(GPIO_WIZZ, GPIO_MODE_OUTPUT);
+    gpio_pulldown_en(GPIO_WIZZ);
+}
+
 void app_main(void) {
     init_nvs();
     wifi_init_softap();
+    setup_gpio();
 
-    xTaskCreate(ota_task, "ota_task", 4096, NULL, 10, NULL);
+    xTaskCreate(ota_task, "ota_task", 4096, NULL, 12, NULL);
 
-    vTaskSuspend(NULL);
+    start_webserver();
+
+    vTaskDelete(NULL);
 }
