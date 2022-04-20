@@ -55,7 +55,7 @@ void wifi_init_softap(void) {
     };
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
-    ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_AP, &wifi_config));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
     ESP_ERROR_CHECK(esp_wifi_set_max_tx_power(34));
 }
@@ -89,11 +89,15 @@ void ota_task(void *args) {
     esp_http_client_config_t config = {
             .url = url,
             .cert_pem = (char *) cert_pem_start,
+            .client_cert_len = cert_pem_end - cert_pem_start,
             .skip_cert_common_name_check = true
+    };
+    esp_https_ota_config_t ota_config = {
+            .http_config = &config,
     };
 
     ESP_LOGI(TAG, "start OTA");
-    ret = esp_https_ota(&config);
+    ret = esp_https_ota(&ota_config);
     if (ret == ESP_OK) {
         ESP_LOGI(TAG, "Firmware upgrade success rebooting");
         vTaskDelay(1000 / portTICK_PERIOD_MS);
