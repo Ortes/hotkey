@@ -1,0 +1,16 @@
+menu "Hotkey Configuration"
+
+    config BATTERY_CHANNEL
+        int "Battery ADC Channel"
+        default 0
+        help
+            Defines channel, thus GPIO, for ADC
+
+    config GPIO_WIZZ
+        int "Wizz GPIO"
+        range 0 48
+        default 25
+        help
+            GPIO number (IOxx) to output the wizz signal.
+
+endmenu

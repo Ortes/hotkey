@@ -3,13 +3,16 @@
 #include <esp_https_ota.h>
 #include <mdns.h>
 #include <esp_http_server.h>
+#include <driver/adc.h>
 #include "esp_wifi.h"
 #include "nvs_flash.h"
 #include "driver/gpio.h"
 
 static const char *TAG = "hotkey";
 
-#define GPIO_WIZZ GPIO_NUM_25
+#define GPIO_WIZZ CONFIG_GPIO_WIZZ
+#define BATTERY_CHANNEL CONFIG_BATTERY_CHANNEL
+#define BATTERY_SAMPLE_COUNT 100
 
 extern const uint8_t cert_pem_start[] asm("_binary_firmware_crt_start");
 extern const uint8_t cert_pem_end[]   asm("_binary_firmware_crt_end");
@@ -116,13 +119,6 @@ static esp_err_t update_get_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-static const httpd_uri_t update = {
-        .uri       = "/update",
-        .method    = HTTP_GET,
-        .handler   = update_get_handler
-};
-
-
 static bool level = false;
 static esp_err_t toggle_get_handler(httpd_req_t *req)
 {
@@ -133,10 +129,43 @@ static esp_err_t toggle_get_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+static esp_err_t battery_get_handler(httpd_req_t *req)
+{
+    char buffer[128];
+
+    adc1_config_width(ADC_WIDTH_BIT_12);
+    adc1_config_channel_atten(BATTERY_CHANNEL, ADC_ATTEN_DB_11);
+
+    int result = 0;
+    for (int i = 0; i < BATTERY_SAMPLE_COUNT; ++i)
+        result += adc1_get_raw(BATTERY_CHANNEL);
+    result /= BATTERY_SAMPLE_COUNT;
+
+    snprintf(buffer, 128, "{\"battery\":%d}", result);
+
+    httpd_resp_send(req, buffer, HTTPD_RESP_USE_STRLEN);
+
+    ESP_LOGI(TAG, "Battery at %d", result);
+    return ESP_OK;
+}
+
+
+static const httpd_uri_t update = {
+        .uri       = "/update",
+        .method    = HTTP_GET,
+        .handler   = update_get_handler
+};
+
 static const httpd_uri_t toggle = {
         .uri       = "/toggle",
         .method    = HTTP_GET,
         .handler   = toggle_get_handler
+};
+
+static const httpd_uri_t battery = {
+        .uri       = "/battery",
+        .method    = HTTP_GET,
+        .handler   = battery_get_handler
 };
 
 
@@ -149,6 +178,7 @@ static httpd_handle_t start_webserver(void)
     if (httpd_start(&server, &config) == ESP_OK) {
         httpd_register_uri_handler(server, &toggle);
         httpd_register_uri_handler(server, &update);
+        httpd_register_uri_handler(server, &battery);
         return server;
     }
 
